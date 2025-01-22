@@ -27,7 +27,7 @@ Setup Instructions
 
 Environment Variables
 Update your `.env` file with the following variables:
-```env
+"'''env
 USER_EMAIL=your_email@example.com
 CHANNEL_ID=your_channel_id
 
