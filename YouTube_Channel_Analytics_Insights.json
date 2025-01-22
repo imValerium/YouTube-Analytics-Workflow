@@ -1,0 +1,588 @@
+{
+  "name": "YouTube Channel Analytics Insights",
+  "nodes": [
+    {
+      "parameters": {
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.chatTrigger",
+      "typeVersion": 1.1,
+      "position": [
+        -800,
+        -580
+      ],
+      "id": "PLACEHOLDER_ID",
+      "name": "When chat message received",
+      "webhookId": "YOUR_WEBHOOK_ID"
+    },
+    {
+      "parameters": {
+        "model": "gpt-4o",
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatOpenAi",
+      "typeVersion": 1.1,
+      "position": [
+        -600,
+        -420
+      ],
+      "id": "PLACEHOLDER_ID",
+      "name": "OpenAI Chat Model",
+      "credentials": {
+        "openAiApi": {
+          "id": "YOUR_OPENAI_API_ID",
+          "name": "YOUR_OPENAI_ACCOUNT"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatOpenAi",
+      "typeVersion": 1.1,
+      "position": [
+        400,
+        -420
+      ],
+      "id": "PLACEHOLDER_ID",
+      "name": "OpenAI Chat Model1",
+      "credentials": {
+        "openAiApi": {
+          "id": "YOUR_OPENAI_API_ID",
+          "name": "YOUR_OPENAI_ACCOUNT"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "weeks",
+              "triggerAtHour": 15
+            }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        -640,
+        240
+      ],
+      "id": "PLACEHOLDER_ID",
+      "name": "Schedule Trigger"
+    },
+    {
+      "parameters": {
+        "url": "https://youtubeanalytics.googleapis.com/v2/reports",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "youTubeOAuth2Api",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "ids",
+              "value": "={{ $env.CHANNEL_ID }}"
+            },
+            {
+              "name": "startDate",
+              "value": "={{ $json.startDate }}"
+            },
+            {
+              "name": "endDate",
+              "value": "={{ $json.endDate }}"
+            },
+            {
+              "name": "=metrics",
+              "value": "={{ $json.metrics }}"
+            },
+            {
+              "name": "dimensions",
+              "value": "="
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -240,
+        240
+      ],
+      "id": "PLACEHOLDER_ID",
+      "name": "Fetch Analytics Data",
+      "credentials": {
+        "youTubeOAuth2Api": {
+          "id": "YOUR_YOUTUBE_API_ID",
+          "name": "YOUR_YOUTUBE_ACCOUNT"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "sendTo": "={{ $env.USER_EMAIL }}",
+        "subject": "Weekly Channel Insights!",
+        "emailType": "text",
+        "message": "=Here's your weekly YouTube channel report: \n\nSubscribers Gained: {{ $json.currentMetrics.subscribersGained }}\nSubscribers Lost: {{ $json.currentMetrics.subscribersLost }}\nTotal Views: {{ $json.currentMetrics.views }}\nTotal Likes: {{ $json.currentMetrics.likes }}\nTotal Shares: {{ $json.currentMetrics.shares }}\nWatch Time in Minutes: {{ $json.currentMetrics.estimatedMinutesWatched }}\nTotal Comments: {{ $json.currentMetrics.comments }}  \n\nKeep up the great work!",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.1,
+      "position": [
+        160,
+        40
+      ],
+      "id": "PLACEHOLDER_ID",
+      "name": "Gmail1",
+      "webhookId": "YOUR_WEBHOOK_ID",
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "YOUR_GMAIL_API_ID",
+          "name": "YOUR_GMAIL_ACCOUNT"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "/**************************************\n * 1) Grab your parsed output\n **************************************/\nconst parserOutput = $json.output?.output ?? {};\n// Now 'parserOutput.metric' should exist\n// e.g. \"subscribersGained,views\"\n\nconst requested = parserOutput.metric;\nconst dateRangeInput = parserOutput.dateRange;\n// Or $json.response?.output, etc., depending on your actual data\n\n/**************************************\n * 2) Extract user’s metrics & date range\n **************************************/\n\n// If either is missing, throw an error or fallback\nif (!requested) throw new Error(\"No metric found in parserOutput!\");\nif (!dateRangeInput) throw new Error(\"No dateRange found in parserOutput!\");\n\n/**************************************\n * 3) Split the metrics string\n **************************************/\nlet requestedMetrics = requested\n  .split(\",\")\n  .map(m => m.trim())\n  .filter(Boolean);\n\nconsole.log(\"Requested metrics after split:\", requestedMetrics);\n\n/**************************************\n * 4) Parse the date range\n **************************************/\nfunction parseDays(str) {\n  const lower = str.toLowerCase();\n  if (lower === \"monthly\") return 30;\n  const match = lower.match(/(\\d+)/);\n  return match ? parseInt(match[1], 10) : 7;\n}\n\nconst requestedDays = parseDays(dateRangeInput);\n\n/**************************************\n * 5) Compute start/end dates\n **************************************/\nconst formatDate = d => d.toISOString().split(\"T\")[0];\nconst today = new Date();\nconst startDate = new Date(today.getTime() - requestedDays * 24 * 60 * 60 * 1000);\n\n/**************************************\n * 6) Return final object\n **************************************/\nreturn {\n  metrics: requestedMetrics.join(\",\"), // \"subscribersGained,views\"\n  startDate: formatDate(startDate),\n  endDate: formatDate(today),\n  dateRange: dateRangeInput            // \"last 10 days\"\n};\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -280,
+        -580
+      ],
+      "id": "PLACEHOLDER_ID",
+      "name": "Code2"
+    },
+    {
+      "parameters": {
+        "jsCode": "const metrics = $json.columnHeaders.map(header => header.name);\nconst values = $json.rows[0]; // Assuming rows[0] contains the values\n\n// Combine metrics and values into a structured format\nconst data = metrics.map((metric, index) => ({\n    metric: metric,\n    value: values[index],\n    dateRange: $json.dateRange // Assuming dateRange is passed from earlier nodes\n}));\n\nreturn {\n    json: {\n        metricsData: data\n    }\n};\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        140,
+        -580
+      ],
+      "id": "PLACEHOLDER_ID",
+      "name": "Code3"
+    },
+    {
+      "parameters": {
+        "url": "https://youtubeanalytics.googleapis.com/v2/reports",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "youTubeOAuth2Api",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "ids",
+              "value": "={{ $env.CHANNEL_ID }}"
+            },
+            {
+              "name": "startDate",
+              "value": "={{ $json.startDate }}"
+            },
+            {
+              "name": "endDate",
+              "value": "={{ $json.endDate }}"
+            },
+            {
+              "name": "=metrics",
+              "value": "={{ $json.metrics }}"
+            },
+            {
+              "name": "dimensions",
+              "value": "="
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -60,
+        -580
+      ],
+      "id": "PLACEHOLDER_ID",
+      "name": "Fetch Analytics Data1",
+      "credentials": {
+        "youTubeOAuth2Api": {
+          "id": "YOUR_YOUTUBE_API_ID",
+          "name": "YOUR_YOUTUBE_ACCOUNT"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsonSchemaExample": "{\n  \"output\": {\n    \"metric\": \"likes,views,subscribersGained,subscribersLost\",\n    \"dateRange\": \"Last 7 days\"\n  }\n}"
+      },
+      "type": "@n8n/n8n-nodes-langchain.outputParserStructured",
+      "typeVersion": 1.2,
+      "position": [
+        -440,
+        -420
+      ],
+      "id": "PLACEHOLDER_ID",
+      "name": "Structured Output Parser"
+    },
+    {
+      "parameters": {
+        "hasOutputParser": true,
+        "options": {
+          "systemMessage": "SYSTEM MESSAGE:\n\nYou are a YouTube analytics agent...\nReturn ONLY valid JSON in this exact structure:\n{\n  \"output\": {\n    \"metrics\": \"<comma_separated_metrics>\",\n    \"dateRange\": \"<date_range>\"\n  }\n}\n\nEXAMPLE:\nUser says: \"I want my likes and views in the last 10 days.\"\nYou respond with exactly:\n{\n  \"output\": {\n    \"metrics\": \"likes,views\",\n    \"dateRange\": \"last 10 days\"\n  }\n}\n\nIf the user asks for a date range such as \"in the last month\", convert to \"last 30 days\", for example.\nIf the user asks for watch time in a value other than minutes, such as \"watch time in hours\" then request minutes and allow the final agent to convert to minutes.\nAllow for a conversational flow. Use the memory tool to dynamically adjust your output based on the user's request.\nHere's a list of available metrics to call, make sure to dynamically interpret the user's request and adjust your output accordingly:\n\"views\",\n\"likes\",\n\"shares\",\n\"subscribersGained\",\n\"subscribersLost\",\n\"comments\",\n\"estimatedMinutesWatched\"\n"
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 1.7,
+      "position": [
+        -600,
+        -580
+      ],
+      "id": "PLACEHOLDER_ID",
+      "name": "Analytics Fetcher"
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "={{ $json.metricsData }}",
+        "options": {
+          "systemMessage": "Using the metrics and data range provided, give the user insights into their analytics. \n\nMake sure to go in depth; providing the user with useful tips and correlations between data. \n\nLay it all out nicely so that the user can easily digest the insights. Dynamically adjust the amount of text outputted based on how much has been inputted. If the user has request only 1 or 2 metrics, make sure the output isn't as long as if they've requested all of the metrics, for example.\n\nIf the user asks for watch time in hours, convert minutes to hours."
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 1.7,
+      "position": [
+        380,
+        -580
+      ],
+      "id": "PLACEHOLDER_ID",
+      "name": "Analytics Summariser"
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "={{ $json.currentMetrics }}",
+        "options": {
+          "systemMessage": "You are a helpful assistant in charge of compiling the user's YouTube analytics, providing insights, and sending off to their gmail!  Include insights into how the user's metrics correlate!\n\nPlease format the email nicely. Omit any instances of \"*\" or \"#\"\nConvert minutes watched into hours watched.\nProvide a view:like ratio.\nContain in only 1 email."
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 1.7,
+      "position": [
+        240,
+        240
+      ],
+      "id": "PLACEHOLDER_ID",
+      "name": "AI Agent"
+    },
+    {
+      "parameters": {
+        "sendTo": "={{ $env.USER_EMAIL }}",
+        "subject": "Weekly Report!",
+        "emailType": "text",
+        "message": "={{ $fromAI('placeholder_name') }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.gmailTool",
+      "typeVersion": 2.1,
+      "position": [
+        440,
+        440
+      ],
+      "id": "PLACEHOLDER_ID",
+      "name": "Gmail",
+      "webhookId": "YOUR_WEBHOOK_ID",
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "YOUR_GMAIL_API_ID",
+          "name": "YOUR_GMAIL_ACCOUNT"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatOpenAi",
+      "typeVersion": 1.1,
+      "position": [
+        240,
+        440
+      ],
+      "id": "PLACEHOLDER_ID",
+      "name": "OpenAI Chat Model2",
+      "credentials": {
+        "openAiApi": {
+          "id": "YOUR_OPENAI_API_ID",
+          "name": "YOUR_OPENAI_ACCOUNT"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "content": "Weekly Analytics Report Workflow",
+        "height": 80,
+        "width": 260,
+        "color": 6
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -280,
+        140
+      ],
+      "id": "PLACEHOLDER_ID",
+      "name": "Sticky Note"
+    },
+    {
+      "parameters": {
+        "content": "Dynamic Analytics Report Workflow",
+        "height": 80,
+        "width": 280,
+        "color": 6
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -300,
+        -700
+      ],
+      "id": "PLACEHOLDER_ID",
+      "name": "Sticky Note1"
+    },
+    {
+      "parameters": {
+        "jsCode": "const today = new Date();\nconst requestedDays = 7; // Weekly report\nconst startDate = new Date(today.getTime() - requestedDays * 24 * 60 * 60 * 1000);\n\nreturn {\n    json: {\n        startDate: startDate.toISOString().split(\"T\")[0],\n        endDate: today.toISOString().split(\"T\")[0],\n        metrics: \"subscribersGained,subscribersLost,views,likes,shares,estimatedMinutesWatched,comments\",\n        dateRange: `Last ${requestedDays} days`\n    }\n};\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -440,
+        240
+      ],
+      "id": "PLACEHOLDER_ID",
+      "name": "Time and Metrics"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Extract data rows and column headers\nconst data = $json.rows || []; // Ensure rows are an array\nconst columnHeaders = $json.columnHeaders || []; // Ensure headers exist\n\n// Map headers to metric names\nconst metrics = columnHeaders.map(header => header.name);\n\n// Construct currentMetrics dynamically\nconst currentMetrics = metrics.reduce((summary, metricName, index) => {\n    summary[metricName] = data[0][index] || 0; // Assign value or default to 0\n    return summary;\n}, {});\n\nreturn {\n    json: {\n        currentMetrics // Output the parsed metrics\n    }\n};\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -40,
+        240
+      ],
+      "id": "PLACEHOLDER_ID",
+      "name": "Output Structure"
+    },
+    {
+      "parameters": {
+        "contextWindowLength": 10
+      },
+      "type": "@n8n/n8n-nodes-langchain.memoryBufferWindow",
+      "typeVersion": 1.3,
+      "position": [
+        340,
+        400
+      ],
+      "id": "PLACEHOLDER_ID",
+      "name": "Window Buffer Memory"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "When chat message received": {
+      "main": [
+        [
+          {
+            "node": "Analytics Fetcher",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "OpenAI Chat Model": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "Analytics Fetcher",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "OpenAI Chat Model1": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "Analytics Summariser",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Schedule Trigger": {
+      "main": [
+        [
+          {
+            "node": "Time and Metrics",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Analytics Data": {
+      "main": [
+        [
+          {
+            "node": "Output Structure",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code2": {
+      "main": [
+        [
+          {
+            "node": "Fetch Analytics Data1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code3": {
+      "main": [
+        [
+          {
+            "node": "Analytics Summariser",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Analytics Data1": {
+      "main": [
+        [
+          {
+            "node": "Code3",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Structured Output Parser": {
+      "ai_outputParser": [
+        [
+          {
+            "node": "Analytics Fetcher",
+            "type": "ai_outputParser",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Analytics Fetcher": {
+      "main": [
+        [
+          {
+            "node": "Code2",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Analytics Summariser": {
+      "main": [
+        []
+      ]
+    },
+    "Gmail1": {
+      "main": [
+        []
+      ]
+    },
+    "Gmail": {
+      "ai_tool": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "OpenAI Chat Model2": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Time and Metrics": {
+      "main": [
+        [
+          {
+            "node": "Fetch Analytics Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Output Structure": {
+      "main": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Window Buffer Memory": {
+      "ai_memory": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "ai_memory",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "PLACEHOLDER_ID",
+  "meta": {
+    "instanceId": "PLACEHOLDER_ID"
+  },
+  "id": "PLACEHOLDER_ID",
+  "tags": []
+}
